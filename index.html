@@ -1,0 +1,410 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Glyph Ribbon</title>
+<style>
+  :root { --bg: #0e0e10; --ink: #f2f2f2; --soft: #8a8a90; --paper: #f6f5f1; --paper-ink: #111; }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { background: var(--bg); color: var(--ink); font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .pin { height: 260vh; }
+  .hero { position: sticky; top: 0; height: 100vh; overflow: hidden; }
+  canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .copy { position: absolute; left: clamp(16px, 5vw, 64px); top: 50%; transform: translateY(-50%); max-width: min(640px, calc(100% - 32px)); will-change: transform, opacity; }
+  h1 { font-size: clamp(40px, 7vw, 96px); line-height: 1; letter-spacing: -0.03em; font-weight: 600; }
+  h1 span { display: block; color: var(--soft); font-weight: 400; }
+  p { margin-top: 24px; font-size: clamp(16px, 1.6vw, 20px); color: var(--soft); max-width: 36ch; }
+  @media (max-width: 899px) { .copy { top: 26%; } }
+  .after { min-height: 100vh; display: grid; place-items: center; padding: 16px; text-align: center; background: var(--paper); color: var(--paper-ink); font-size: clamp(24px, 4vw, 48px); }
+</style>
+</head>
+<body>
+<div class="pin">
+  <section class="hero">
+    <canvas aria-hidden="true"></canvas>
+    <div class="copy">
+      <h1>Pure math<span>no baked frames</span></h1>
+      <p>1,400 glyphs riding a coil, projected by hand and scattered by scroll.</p>
+    </div>
+  </section>
+</div>
+<section class="after">Scroll back up.</section>
+
+<script>
+(() => {
+  const TAU = Math.PI * 2;
+  const MAX_GLYPHS = 1400;
+  const GLYPHS = ['•', 't', 'u', 'n', 'r', 's'];
+  const SPRITE = 64;
+
+  const HALF = 1.0;
+  const TURNS = 3.5;
+  const PITCH = (2 * HALF) / TURNS;
+  const BAND = 0.2 * PITCH;
+  const RADIUS = 0.33;
+  const SQUARE = 0.97;
+  const VIEW_TILT = 0.04;
+  const FOCAL = 2.4;
+  const SPEED = 0.085;
+  const WIDTH_NOISE = 0.38;
+  const BAND_NOISE = 0.35;
+  const STRAND_FREQ = 0.5;
+  const AXIS_NOISE = 0.07;
+  const WALL_JITTER = 0.1;
+  const PHI_MAX = TURNS * TAU;
+  const FADE_START = 0.62;
+
+  const INK = [0.21, 0.3, 0.27, 0.27, 0.26, 0.25];
+  const PLANE_NEAR = 0.02;
+  const PLANE_FAR = 0.045;
+  const GLYPH_WORLD = 11 / (900 * 0.42);
+  const GAP = 0.004;
+  const SHEAR = 0.45;
+  const DARTS = 60000;
+  const VIS_MS = 90;
+  const PAD = 40;
+  const CELL_MIN = 6;
+
+  const canvas = document.querySelector('canvas');
+  const ctx = canvas.getContext('2d');
+  const pin = document.querySelector('.pin');
+  const hero = document.querySelector('.hero');
+  const copy = document.querySelector('.copy');
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  const clamp01 = v => (v < 0 ? 0 : v > 1 ? 1 : v);
+  const smooth = v => { v = clamp01(v); return v * v * (3 - 2 * v); };
+  const smoother = v => { v = clamp01(v); return v * v * v * (v * (6 * v - 15) + 10); };
+  const easeInOut = v => { if (v < 0.5) return 4 * v * v * v; const u = 2 - 2 * v; return 1 - u * u * u / 2; };
+  const lerp = (a, b, t) => a + (b - a) * t;
+
+  let seed = 1337;
+  const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+
+  const ASIN_SQUARE = Math.asin(SQUARE);
+  const sweep = phi => Math.asin(SQUARE * Math.sin(phi)) / ASIN_SQUARE;
+  const radiusAt = y => RADIUS
+    * (1 - 0.72 * Math.exp(-(((y - 0.05) / 0.13) ** 2)))
+    * (0.7 + 0.3 * smooth((HALF - Math.abs(y)) / 0.35));
+  const heightOf = phi => -HALF + (PITCH * phi) / TAU;
+
+  const gradient = i => {
+    let h = Math.imul(i, 374761393);
+    h = Math.imul(h ^ (h >>> 13), 1274126177);
+    h ^= h >>> 16;
+    return ((h & 0xffff) / 0xffff) * 2 - 1;
+  };
+  const perlin = x => {
+    const i = Math.floor(x), f = x - i;
+    const a = gradient(i) * f, b = gradient(i + 1) * (f - 1);
+    return 2 * (a + (b - a) * f * f * f * (f * (f * 6 - 15) + 10));
+  };
+  const fbm = (x, offset) => 0.65 * perlin(x + offset) + 0.35 * perlin(2.03 * x + offset + 17.3);
+
+  const spineRadius = yc => radiusAt(yc) * (1 + WIDTH_NOISE * fbm(yc * 2.4, 3.1));
+  const spineAxis = yc => AXIS_NOISE * fbm(yc * 1.6, 23.9);
+
+  const STEPS = 8192;
+  const STRIDE = 8;
+  const FINE = STEPS * 4;
+  const travelled = new Float64Array(FINE + 1);
+  for (let i = 0, prevX = 0, prevY = 0; i <= FINE; i++) {
+    const phi = (i * PHI_MAX) / FINE;
+    const yc = heightOf(phi);
+    const r = spineRadius(yc);
+    const depth = Math.cos(phi);
+    const k = FOCAL / (FOCAL - depth * r);
+    const x = (spineAxis(yc) + r * sweep(phi)) * k;
+    const y = (yc - VIEW_TILT * r * depth) * k;
+    if (i) travelled[i] = travelled[i - 1] + Math.sqrt((x - prevX) ** 2 + (y - prevY) ** 2);
+    prevX = x;
+    prevY = y;
+  }
+  const ARC = travelled[FINE];
+
+  const coil = new Float32Array((STEPS + 1) * STRIDE);
+  for (let i = 0, j = 0; i <= STEPS; i++) {
+    const target = (i * ARC) / STEPS;
+    while (j < FINE - 1 && travelled[j + 1] < target) j++;
+    const seg = travelled[j + 1] - travelled[j];
+    const phi = ((j + (target - travelled[j]) / seg) * PHI_MAX) / FINE;
+    const yc = heightOf(phi);
+    const o = i * STRIDE;
+    coil[o] = yc;
+    coil[o + 1] = spineRadius(yc);
+    coil[o + 2] = BAND * Math.max(0.15, 1 + BAND_NOISE * 2 * fbm(phi * STRAND_FREQ, 11.7));
+    coil[o + 3] = BAND * Math.max(0.15, 1 + BAND_NOISE * 2 * fbm(phi * STRAND_FREQ, 41.3));
+    coil[o + 4] = spineAxis(yc);
+    coil[o + 5] = sweep(phi);
+    coil[o + 6] = Math.cos(phi);
+    coil[o + 7] = smooth((HALF - Math.abs(yc)) / 0.22);
+  }
+
+  const sprites = GLYPHS.map(g => {
+    const c = typeof OffscreenCanvas === 'function' ? new OffscreenCanvas(SPRITE, SPRITE) : document.createElement('canvas');
+    c.width = c.height = SPRITE;
+    const x = c.getContext('2d');
+    x.fillStyle = '#fff';
+    if (g === '•') {
+      x.beginPath();
+      x.arc(SPRITE / 2, SPRITE / 2, 13, 0, TAU);
+      x.fill();
+    } else {
+      x.font = '500 46px ui-monospace, SFMono-Regular, Menlo, monospace';
+      x.textAlign = 'center';
+      x.textBaseline = 'middle';
+      x.fillText(g, SPRITE / 2, SPRITE / 2 + 2);
+    }
+    return c.transferToImageBitmap ? c.transferToImageBitmap() : c;
+  });
+
+  const points = [];
+  const REACH = 2 * 0.3 * 1.25 * GLYPH_WORLD + GAP;
+  const cellsA = Math.floor(ARC / REACH), cellsB = Math.ceil((2 * BAND) / REACH);
+  const cellA = ARC / cellsA;
+  const buckets = Array.from({ length: cellsA * cellsB }, () => []);
+  for (let dart = 0; dart < DARTS && points.length < MAX_GLYPHS; dart++) {
+    const arc = rand() * ARC;
+    const band = rand() * 2 - 1;
+    const glyph = rand() < 0.15 ? 0 : 1 + Math.floor(rand() * (GLYPHS.length - 1));
+    const sheetEdge = smooth((Math.abs(band) - 0.55) / 0.45);
+    const sizeMul = (0.75 + 0.5 * rand()) * (1 - 0.3 * sheetEdge);
+    const reach = INK[glyph] * sizeMul * GLYPH_WORLD;
+    const across = (band + 1) * BAND;
+    const ca = Math.min(cellsA - 1, Math.floor(arc / cellA)), cb = Math.min(cellsB - 1, Math.floor(across / REACH));
+    let free = true;
+    for (let db = -1; db <= 1 && free; db++) {
+      const b = cb + db;
+      if (b < 0 || b >= cellsB) continue;
+      for (let da = -1; da <= 1 && free; da++) {
+        for (const q of buckets[b * cellsA + ((ca + da + cellsA) % cellsA)]) {
+          let u = Math.abs(arc - q.arc);
+          if (u > ARC / 2) u = ARC - u;
+          const v = Math.abs(across - q.across);
+          const need = reach + q.reach + GAP;
+          if (u * u + v * v - 2 * SHEAR * u * v < need * need) { free = false; break; }
+        }
+      }
+    }
+    if (!free) continue;
+    const heading = rand() * TAU;
+    const speed = 0.6 + 1.1 * rand();
+    const p = {
+      arc, band, across, reach, glyph, sizeMul,
+      wall: Math.max(-1, Math.min(1, 2.2 * fbm(arc * 5 + band * 1.7, 71.9))),
+      alphaMul: 1 - 0.85 * sheetEdge,
+      dx: Math.cos(heading) * speed,
+      dy: Math.sin(heading) * speed - 0.35,
+      spin: 3 * (rand() - 0.5),
+      delay: 0.45 * rand(),
+      rank: rand(),
+    };
+    points.push(p);
+    buckets[cb * cellsA + ca].push(p);
+  }
+  const N = points.length;
+  const order = Uint16Array.from(points.map((_, n) => n).sort((a, b) => points[a].rank - points[b].rank));
+
+  const vis = new Float32Array(N).fill(1);
+  const live = new Uint8Array(N);
+  const next = new Int32Array(N);
+  const gX = new Float32Array(N), gY = new Float32Array(N), gZ = new Float32Array(N);
+  const gRad = new Float32Array(N), gSize = new Float32Array(N), gAlpha = new Float32Array(N), gRot = new Float32Array(N);
+  let heads = new Int32Array(0);
+
+  let W = 1, H = 1, dpr = 1, pinTop = 0, range = 1;
+  function resize() {
+    W = Math.max(1, hero.clientWidth);
+    H = Math.max(1, hero.clientHeight);
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.round(W * dpr);
+    canvas.height = Math.round(H * dpr);
+    pinTop = pin.getBoundingClientRect().top + scrollY;
+    range = Math.max(1, pin.offsetHeight - H);
+    heads = new Int32Array((Math.ceil((W + 2 * PAD) / CELL_MIN) + 1) * (Math.ceil((H + 2 * PAD) / CELL_MIN) + 1));
+  }
+  new ResizeObserver(resize).observe(hero);
+  resize();
+
+  const scrollTarget = () => clamp01((scrollY - pinTop) / range);
+
+  let time = 0, last = 0, introStart = 0, lastFade = -1;
+  let progress = scrollTarget();
+
+  const A = { z: 0, depth: 0, k: 0, x: 0, y: 0, ends: 0 };
+
+  function place(arc, band, wall, out) {
+    const t = (arc / ARC) * STEPS;
+    const i = t >= STEPS ? STEPS - 1 : t | 0;
+    const f = t - i;
+    const o = i * STRIDE;
+    const n = o + STRIDE;
+    const yc = coil[o] + (coil[n] - coil[o]) * f;
+    const r = (coil[o + 1] + (coil[n + 1] - coil[o + 1]) * f) * (1 + WALL_JITTER * wall);
+    const s = band >= 0 ? 2 : 3;
+    const thickness = coil[o + s] + (coil[n + s] - coil[o + s]) * f;
+    const axis = coil[o + 4] + (coil[n + 4] - coil[o + 4]) * f;
+    const sw = coil[o + 5] + (coil[n + 5] - coil[o + 5]) * f;
+    const depth = coil[o + 6] + (coil[n + 6] - coil[o + 6]) * f;
+    const k = FOCAL / (FOCAL - depth * r);
+    out.z = depth * r;
+    out.depth = depth;
+    out.k = k;
+    out.x = (axis + r * sw) * k;
+    out.y = (yc + thickness * band - VIEW_TILT * r * depth) * k;
+    out.ends = coil[o + 7] + (coil[n + 7] - coil[o + 7]) * f;
+  }
+
+  function draw(now) {
+    const dt = Math.min(64, now - (last || now));
+    last = now;
+    if (!introStart) introStart = now;
+    const seconds = reduced ? 0 : dt / 1000;
+    time += seconds;
+    const target = scrollTarget();
+    progress += (target - progress) * (reduced ? 1 : 1 - Math.exp(-dt / 220));
+
+    const P = progress;
+    const fade = clamp01(P / 0.3);
+    if (Math.abs(fade - lastFade) > 1e-3) {
+      lastFade = fade;
+      copy.style.opacity = (1 - fade).toFixed(3);
+      copy.style.transform = `translate(${(-48 * fade).toFixed(1)}px, -50%)`;
+      copy.style.pointerEvents = fade > 0.5 ? 'none' : '';
+    }
+
+    const intro = reduced ? 0 : 1 - smoother((now - introStart) / 1600);
+    const scatter = Math.max(smooth((P - 0.05) / 0.8), intro);
+    const zoom = 1 + 1.6 * easeInOut(smooth((P - 0.05) / 0.8));
+    const anchorX = W >= 900 ? W * 0.62 : W * 0.5;
+    const centre = easeInOut(clamp01(P / 0.45));
+    const cx = lerp(anchorX, W / 2, centre);
+    const cy = lerp(W >= 900 ? H / 2 : H * 0.68, H / 2, centre);
+    const scale = Math.min(W, H) * 0.42 * zoom;
+    const spread = 0.7 * Math.sqrt(W * W + H * H);
+    const glyphPx = 11 * Math.sqrt(zoom) * Math.max(0.8, Math.min(W, H) / 900);
+    const spinRate = 1 + 0.3 * time;
+    const travel = SPEED * seconds;
+    const fadeTop = FADE_START * H;
+    const fadeSpan = (1 - FADE_START) * H;
+    const settle = reduced ? 1 : 1 - Math.exp(-dt / VIS_MS);
+
+    let maxRad = 0;
+    for (let n = 0; n < N; n++) {
+      const p = points[n];
+      if (travel) {
+        p.arc += travel;
+        if (p.arc >= ARC) p.arc -= ARC;
+      }
+      place(p.arc, p.band, p.wall, A);
+
+      const fog = smooth((0.25 - A.depth) / 1.1);
+      const ends = A.ends;
+      let X = cx + A.x * scale;
+      let Y = cy - A.y * scale;
+      let alpha = (1 - 0.65 * fog) * p.alphaMul * ends;
+      let size = glyphPx * p.sizeMul * A.k * (1 - 0.3 * fog) * (0.6 + 0.4 * ends);
+      let rot = 0;
+
+      if (scatter > 0) {
+        const a = smooth((scatter - p.delay) / (1 - p.delay));
+        X += p.dx * spread * a;
+        Y += p.dy * spread * a;
+        rot = p.spin * a * spinRate;
+        size *= 1 + 0.6 * a;
+        alpha *= 1 - 0.7 * a;
+      }
+
+      if (Y > fadeTop) alpha *= clamp01((H - Y) / fadeSpan);
+      if (alpha < 0.01 || X < -PAD || X > W + PAD || Y < -PAD || Y > H + PAD) { live[n] = 0; continue; }
+
+      const rad = INK[p.glyph] * size;
+      if (rad > maxRad) maxRad = rad;
+      live[n] = 1;
+      gX[n] = X; gY[n] = Y; gZ[n] = A.z;
+      gRad[n] = rad; gSize[n] = size; gAlpha[n] = alpha; gRot[n] = rot;
+    }
+
+    const clear = 0.9 * GAP * scale;
+    const cell = Math.max(CELL_MIN, 2 * maxRad + clear);
+    const cols = Math.ceil((W + 2 * PAD) / cell) + 1;
+    const rows = Math.ceil((H + 2 * PAD) / cell) + 1;
+    heads.fill(-1, 0, cols * rows);
+
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    let identity = true;
+
+    for (let q = 0; q < N; q++) {
+      const n = order[q];
+      if (!live[n]) continue;
+      const X = gX[n], Y = gY[n], Z = gZ[n], rad = gRad[n];
+      const col = ((X + PAD) / cell) | 0, row = ((Y + PAD) / cell) | 0;
+      const c0 = col > 0 ? col - 1 : 0, c1 = col < cols - 1 ? col + 1 : col;
+      const r0 = row > 0 ? row - 1 : 0, r1 = row < rows - 1 ? row + 1 : row;
+
+      let open = 1;
+      for (let r = r0; r <= r1; r++) {
+        for (let c = c0; c <= c1; c++) {
+          for (let b = heads[r * cols + c]; b >= 0; b = next[b]) {
+            let dz = Z - gZ[b];
+            if (dz < 0) dz = -dz;
+            if (dz >= PLANE_FAR) continue;
+            const ddx = X - gX[b], ddy = Y - gY[b];
+            const gap = Math.sqrt(ddx * ddx + ddy * ddy) - rad - gRad[b];
+            if (gap >= clear) continue;
+            const block = vis[b] * (gAlpha[b] < 0.125 ? gAlpha[b] * 8 : 1) * (dz <= PLANE_NEAR ? 1 : (PLANE_FAR - dz) / (PLANE_FAR - PLANE_NEAR)) * (gap <= 0 ? 1 : 1 - gap / clear);
+            if (1 - block < open) open = 1 - block;
+          }
+        }
+      }
+
+      let v = vis[n];
+      v = open < v ? open : v + (open - v) * settle;
+      if (v < 0.01) v = 0; else if (v > 0.99) v = 1;
+      vis[n] = v;
+      if (v === 0) continue;
+
+      const slot = row * cols + col;
+      next[n] = heads[slot];
+      heads[slot] = n;
+
+      const size = gSize[n], rot = gRot[n];
+      ctx.globalAlpha = gAlpha[n] * v;
+      if (rot === 0) {
+        if (!identity) { ctx.setTransform(1, 0, 0, 1, 0, 0); identity = true; }
+        const s = dpr * size;
+        ctx.drawImage(sprites[points[n].glyph], dpr * X - s / 2, dpr * Y - s / 2, s, s);
+      } else {
+        const m = (dpr * size) / SPRITE;
+        const rc = Math.cos(rot) * m, rs = Math.sin(rot) * m;
+        ctx.setTransform(rc, rs, -rs, rc, dpr * X, dpr * Y);
+        ctx.drawImage(sprites[points[n].glyph], -SPRITE / 2, -SPRITE / 2);
+        identity = false;
+      }
+    }
+    ctx.globalAlpha = 1;
+    return reduced && Math.abs(target - progress) < 1e-4;
+  }
+
+  let visible = true, running = false;
+  function frame(now) {
+    if (!visible || document.hidden) { running = false; return; }
+    if (draw(now)) { running = false; return; }
+    requestAnimationFrame(frame);
+  }
+  function start() {
+    if (running) return;
+    running = true;
+    last = 0;
+    requestAnimationFrame(frame);
+  }
+  new IntersectionObserver(([e]) => { visible = e.isIntersecting; if (visible) start(); }).observe(hero);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) start(); });
+  addEventListener('scroll', start, { passive: true });
+  start();
+})();
+</script>
+</body>
+</html>
