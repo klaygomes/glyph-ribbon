@@ -1,0 +1,73 @@
+.gitignore
+  s_59ec3bcbec2e5a::t_46c33bd4918c8d 1-4
+.npmrc
+  s_59ec3bcbec2e5a::t_a19ef5b2bf9a5a 1
+.nvmrc
+  s_59ec3bcbec2e5a::t_99812aab34db98 1
+demo/main.js
+  s_59ec3bcbec2e5a::t_df6168920cf8e1 1-88
+demo/mark.svg
+  s_59ec3bcbec2e5a::t_a42b23a8bdb155 1
+demo/style.css
+  s_59ec3bcbec2e5a::t_2ad1187d2e2329 1-37
+e2e/smoke.spec.ts
+  s_59ec3bcbec2e5a::t_913f0c289dad35 1-61
+index.html
+  s_59ec3bcbec2e5a::t_04e934bcd4cffa 6,8-9,14,22-80,82
+package-lock.json
+  s_59ec3bcbec2e5a::t_b631431eb79e62 1-2130
+package.json
+  s_59ec3bcbec2e5a::t_e60b58bf5ecd0a 1-57
+playwright.config.ts
+  s_59ec3bcbec2e5a::t_c6948ba508bb08 1-12
+scripts/build.mjs
+  s_59ec3bcbec2e5a::t_dd325c96e819bd 1-14
+scripts/serve.mjs
+  s_59ec3bcbec2e5a::t_25203743fa40cb 1-35
+src/core.ts
+  s_59ec3bcbec2e5a::t_ec5e14b940088d 1-363
+src/element.ts
+  s_59ec3bcbec2e5a::t_b2c10443cc5345 1-148
+src/engine.ts
+  s_59ec3bcbec2e5a::t_74aca3af4a3de3 1-510
+src/index.ts
+  s_59ec3bcbec2e5a::t_5a7b00569cbbda 1-6
+src/options.ts
+  s_59ec3bcbec2e5a::t_4900bc504cbdb6 1-195
+src/scroll.ts
+  s_59ec3bcbec2e5a::t_a28db27c5532ad 1-40
+src/sprites.ts
+  s_59ec3bcbec2e5a::t_249796593836b3 1-152
+src/stage.ts
+  s_59ec3bcbec2e5a::t_a50f880ac8cc02 1-174
+src/worker.ts
+  s_59ec3bcbec2e5a::t_d82dd60e4ac5dc 1-18
+test/__snapshots__/engine.test.ts.snap
+  s_59ec3bcbec2e5a::t_a2ece9e5964167 1-341
+test/engine.test.ts
+  s_59ec3bcbec2e5a::t_85d90212824ca7 1-98
+test/options.test.ts
+  s_59ec3bcbec2e5a::t_bb79260beb4cb6 1-86
+tsconfig.build.json
+  s_59ec3bcbec2e5a::t_e0fd960fa3eac6 1-10
+tsconfig.json
+  s_59ec3bcbec2e5a::t_a45ed387d98900 1-15
+vitest.config.ts
+  s_59ec3bcbec2e5a::t_aec213d23ee80a 1-5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "dc01511b5b5080e40b3221d80e503980d3a34fa0",
+  "prompts": {},
+  "sessions": {
+    "s_59ec3bcbec2e5a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b3aa7cd9-9258-46b9-8a27-11dee61110da",
+        "model": "unknown"
+      },
+      "human_author": "Cleiton Loiola <klaygomes@gmail.com>"
+    }
+  }
+}
