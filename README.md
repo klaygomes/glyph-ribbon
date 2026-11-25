@@ -2,6 +2,8 @@
 
 A high-performance canvas animation: a scroll-driven coil of glyphs, projected by hand. No baked frames, no WebGL.
 
+**[Live demo and playground](https://www.estacouveflor.com/glyph-ribbon/)**
+
 ```bash
 npm install @klaygomes/glyph-ribbon
 ```
