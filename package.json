@@ -1,0 +1,57 @@
+{
+  "name": "@klaygomes/glyph-ribbon",
+  "version": "0.1.0",
+  "description": "A high-performance canvas animation: a scroll-driven coil of glyphs, projected by hand.",
+  "license": "MIT",
+  "author": "Cleiton Loiola",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/klaygomes/glyph-ribbon.git"
+  },
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./element": {
+      "types": "./dist/element.d.ts",
+      "default": "./dist/element.js"
+    },
+    "./scroll": {
+      "types": "./dist/scroll.d.ts",
+      "default": "./dist/scroll.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "sideEffects": [
+    "./dist/element.js"
+  ],
+  "keywords": [
+    "canvas",
+    "scroll",
+    "animation",
+    "glyphs",
+    "offscreencanvas",
+    "web-component"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs && tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "dev": "node scripts/serve.mjs",
+    "prepublishOnly": "npm run typecheck && npm test && npm run build"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.65.1",
+    "esbuild": "0.28.2",
+    "typescript": "7.0.2",
+    "vitest": "5.1.2"
+  }
+}
